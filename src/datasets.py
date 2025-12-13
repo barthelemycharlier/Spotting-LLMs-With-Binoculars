@@ -2,12 +2,12 @@ import os
 import json
 import pandas as pd
 
-def load_json_dataset(path, split="test"):
+def load_json_dataset(filename):
     """
     Load a dataset from JSON.
     Expected: list of dicts with keys 'text', 'label' (0=human, 1=machine).
     """
-    file_path = os.path.join(path, f"{split}.json")
+    file_path = filename + ".json"
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Dataset file not found: {file_path}")
     
@@ -19,11 +19,11 @@ def load_json_dataset(path, split="test"):
         raise ValueError("Dataset JSON must contain 'text' and 'label'")
     return df
 
-def load_csv_dataset(path, split="test"):
+def load_csv_dataset(filename):
     """
     Load a dataset from CSV with columns 'text', 'label'.
     """
-    file_path = os.path.join(path, f"{split}.csv")
+    file_path = filename + ".csv"
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Dataset file not found: {file_path}")
     
@@ -32,16 +32,14 @@ def load_csv_dataset(path, split="test"):
         raise ValueError("Dataset CSV must contain 'text' and 'label'")
     return df
 
-def load_dataset(dataset_name, split="test"):
+def load_dataset(dataset_name):
     """
     Unified loader for supported datasets.
-    dataset_name: "ghostbuster", "writing_prompts", "news", "student_essay"
+    dataset_name: "writing_prompts", "student_essay"
     """
     dataset_paths = {
-        "ghostbuster": "data/ghostbuster",
-        "writing_prompts": "data/writing_prompts",
-        "news": "data/news",
-        "student_essay": "data/student_essay"
+        "writing_prompts": "data/ghostbuster_clean/writing_prompts",
+        "student_essay": "data/ghostbuster_clean/student_essay"
     }
     
     if dataset_name not in dataset_paths:
@@ -51,6 +49,6 @@ def load_dataset(dataset_name, split="test"):
     
     # Try JSON first, fallback to CSV
     try:
-        return load_json_dataset(path, split)
+        return load_json_dataset(path)
     except FileNotFoundError:
-        return load_csv_dataset(path, split)
+        return load_csv_dataset(path)

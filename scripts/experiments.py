@@ -29,7 +29,7 @@ def run_experiments():
 
     for dataset_name in datasets:
         print(f"\n=== Dataset: {dataset_name} ===")
-        df = load_dataset(dataset_name, split="test")
+        df = load_dataset(dataset_name)
 
         for det_name, det_obj in detector_objs.items():
             print(f"Running detector: {det_name}")

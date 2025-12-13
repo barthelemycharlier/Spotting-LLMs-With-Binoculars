@@ -2,7 +2,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 class PerplexityCalculator:
-    def __init__(self, performer_name, observer_name=None, device=None, dtype=torch.bfloat16):
+    def __init__(self, performer_name, observer_name=None, device=None, dtype=torch.float16):
         """
         Class for computing perplexity and cross-perplexity.
         performer_name: model used to generate text
@@ -72,25 +72,3 @@ class PerplexityCalculator:
         ppl = self.perplexity(text)
         x_ppl = self.cross_perplexity(text)
         return torch.log(torch.tensor(ppl)) / torch.log(torch.tensor(x_ppl))
-
-
-
-performer_name = "tiiuae/falcon-7b"
-observer_name = "tiiuae/falcon-7b-instruct"
-
-calc = PerplexityCalculator(performer_name, observer_name)
-
-prompt = "Can you write a few sentences about a capybara that is an astrophysicist?"
-
-# Compute standard perplexity
-ppl = calc.perplexity(prompt)
-
-# Compute cross-perplexity
-x_ppl = calc.cross_perplexity(prompt)
-
-# Compute normalized Binoculars score
-score = calc.binoculars_score(prompt)
-
-print("Perplexity (performer):", ppl)
-print("Cross-perplexity (performer -> observer):", x_ppl)
-print("Binoculars score:", score.item())

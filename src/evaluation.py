@@ -14,7 +14,7 @@ def compute_tpr_at_fpr(labels, scores, fpr_threshold=0.0001):
     Compute TPR at a given FPR threshold.
     fpr_threshold = 0.01% = 0.0001
     """
-    fpr, tpr, thresholds = roc_curve(labels, scores)
+    fpr, tpr, _ = roc_curve(labels, scores)
     # Find the max TPR where FPR <= threshold
     tpr_at_threshold = tpr[fpr <= fpr_threshold]
     if len(tpr_at_threshold) == 0:
