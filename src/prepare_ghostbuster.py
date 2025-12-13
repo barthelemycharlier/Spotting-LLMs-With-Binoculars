@@ -30,7 +30,7 @@ def process_dataset(dataset_name, folder_name):
         if generator.lower() in ["prompts"]:
             continue
 
-        label = 0 if generator.lower() == "human" else 1
+        label = 1 if generator.lower() == "human" else 0
 
         for fname in tqdm(os.listdir(gen_path), desc=f"{dataset_name}/{generator}"):
             if not fname.endswith(".txt"):
