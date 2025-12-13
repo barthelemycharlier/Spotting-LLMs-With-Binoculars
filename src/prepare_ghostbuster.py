@@ -63,7 +63,7 @@ def main():
         out_json = os.path.join(OUT_ROOT, f"{dataset_name}.json")
 
         df.to_csv(out_csv, index=False)
-        df.to_json(out_json, orient="records", lines=True)
+        df.to_json(out_json, orient="records", lines=False)
 
         all_dfs.append(df)
 
