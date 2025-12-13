@@ -2,33 +2,28 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 class PerplexityCalculator:
-    def __init__(self, performer_name, observer_name=None, device=None, dtype=torch.float16, max_length=1024):
-        """
-        Class for computing perplexity and cross-perplexity.
-        performer_name: model used to generate text
-        observer_name: model used to evaluate text (if None, same as performer)
-        """
+    def __init__(self, performer_name, observer_name=None, device=None, dtype=torch.float16, max_length=512):
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.dtype = dtype
+        self.max_length = max_length
 
-        # Performer model (generative)
+        # Load models
         self.performer_model = AutoModelForCausalLM.from_pretrained(
             performer_name,
             device_map="auto",
-            trust_remote_code=True,
-            torch_dtype=dtype
+            torch_dtype=dtype,
+            trust_remote_code=True
         )
         self.performer_model.eval()
 
-        # Observer model (evaluation)
         if observer_name is None:
             self.observer_model = self.performer_model
         else:
             self.observer_model = AutoModelForCausalLM.from_pretrained(
                 observer_name,
                 device_map="auto",
-                trust_remote_code=True,
-                torch_dtype=dtype
+                torch_dtype=dtype,
+                trust_remote_code=True
             )
         self.observer_model.eval()
 
@@ -36,57 +31,60 @@ class PerplexityCalculator:
         self.tokenizer = AutoTokenizer.from_pretrained(performer_name)
         self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        self.max_length = max_length
+        # Loss and softmax on GPU
+        self.loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
+        self.softmax = torch.nn.Softmax(dim=-1)
 
-
-    def tokenize(self, texts):
-        """
-        Tokenizes a single text or a list of texts into tensors.
-        Ensures all sequences in a batch have the same length with padding.
-        """
-        if isinstance(texts, str):
-            # single text
-            return self.tokenizer(texts, return_tensors="pt").to(self.device)
-        elif isinstance(texts, list):
-            # batch of texts
-            return self.tokenizer(
-                texts,
-                return_tensors="pt",
-                padding=True,       # pad sequences to the same length
-                truncation=True,    # truncate sequences that are too long
-                max_length=self.max_length     # limit max length
-            ).to(self.device)
-        else:
-            raise ValueError("Input should be a string or a list of strings")
+    def tokenize(self, batch):
+        encodings = self.tokenizer(
+            batch,
+            return_tensors="pt",
+            padding="longest" if len(batch) > 1 else False,
+            truncation=True,
+            max_length=512,
+            return_token_type_ids=False
+        ).to(self.device)
+        return encodings
 
     @torch.inference_mode()
-    def binoculars_score(self, texts):
-        if isinstance(texts, str):
-            texts = [texts]
+    def get_logits(self, encodings):
+        observer_logits = self.observer_model(**encodings).logits
+        performer_logits = self.performer_model(**encodings).logits
+        torch.cuda.synchronize()
+        return observer_logits, performer_logits
 
-        # tokenize batch
-        inputs = self.tokenize(texts)
-        input_ids = inputs["input_ids"]
+    def perplexity(self, encoding, logits):
+        shifted_logits = logits[..., :-1, :].contiguous()
+        shifted_labels = encoding.input_ids[..., 1:].contiguous()
+        shifted_attention_mask = encoding.attention_mask[..., 1:].contiguous()
 
-        # --- Performer PPL ---
-        with torch.no_grad():
-            logits = self.performer_model(input_ids).logits
-            shift_logits = logits[..., :-1, :].contiguous()
-            shift_labels = input_ids[..., 1:].contiguous()
-            loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
-            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-            loss = loss.view(input_ids.size(0), -1).mean(dim=1)
-            ppl = torch.exp(loss)
+        log_probs = torch.log_softmax(shifted_logits, dim=-1)
+        token_log_probs = log_probs.gather(-1, shifted_labels.unsqueeze(-1)).squeeze(-1)
 
-        # --- Observer cross-PPL ---
-        with torch.no_grad():
-            logits = self.observer_model(input_ids).logits
-            shift_logits = logits[..., :-1, :].contiguous()
-            shift_labels = input_ids[..., 1:].contiguous()
-            loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
-            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-            loss = loss.view(input_ids.size(0), -1).mean(dim=1)
-            x_ppl = torch.exp(loss)
+        loss = -(token_log_probs * shifted_attention_mask)
+        ppl = (loss.sum(-1) / shifted_attention_mask.sum(-1)).exp()
 
-        scores = torch.log(ppl) / torch.log(x_ppl)
-        return scores.tolist()
+        return ppl.detach().cpu().numpy()
+
+    def cross_perplexity(self, observer_logits, performer_logits, encoding):
+        shifted_observer_logits = observer_logits[..., :-1, :].contiguous()
+        shifted_performer_logits = performer_logits[..., :-1, :].contiguous()
+        shifted_attention_mask = encoding.attention_mask[..., 1:].contiguous()
+
+        performer_probs = torch.softmax(shifted_performer_logits, dim=-1)
+        observer_log_probs = torch.log_softmax(shifted_observer_logits, dim=-1)
+
+        cross_entropy = -(performer_probs * observer_log_probs).sum(-1)
+        xppl = (cross_entropy * shifted_attention_mask).sum(-1) / shifted_attention_mask.sum(-1)
+
+        return xppl.exp().detach().cpu().numpy()
+
+    def binocular_score(self, text):
+        batch = [text] if isinstance(text, str) else text
+        encodings = self.tokenize(batch)
+        observer_logits, performer_logits = self.get_logits(encodings)
+        ppl = self.perplexity(encodings, observer_logits)
+        xppl = self.cross_perplexity(observer_logits, performer_logits, encodings)
+
+        scores = (ppl / xppl).squeeze().tolist()
+        return scores
