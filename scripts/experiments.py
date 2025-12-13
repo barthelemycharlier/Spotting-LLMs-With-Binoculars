@@ -1,5 +1,4 @@
 import os
-import pandas as pd
 from tqdm import tqdm
 
 from src.datasets import load_dataset
@@ -11,7 +10,7 @@ from src.utils import set_seed
 set_seed(42)
 
 # CONFIGURATION
-datasets = ["writing_prompts", "news", "student_essay"]
+datasets = ["writing_prompts", "student_essay"]
 detectors = ["binoculars"] # list of detectors to run
 
 performer_model = "tiiuae/falcon-7b"
@@ -36,7 +35,7 @@ def run_experiments():
             print(f"Running detector: {det_name}")
             scores = []
 
-            for text in tqdm(df["text"]):
+            for text in tqdm(df["text"], desc=f"{dataset_name}-{det_name}"):
                 score = det_obj.binoculars_score(text) if det_name == "binoculars" else det_obj.score(text)
                 scores.append(score.item() if hasattr(score, "item") else score)
 

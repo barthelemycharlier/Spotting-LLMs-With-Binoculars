@@ -1,0 +1,7 @@
+torch>=2.1.0
+transformers>=4.34.0
+accelerate>=0.23.0
+einops>=0.6.1
+tqdm>=4.65.0
+sentencepiece>=0.1.98
+tokenizers>=0.13.3
