@@ -2,6 +2,9 @@ import os
 import json
 import pandas as pd
 
+# -----------------------------
+# Dataset Loaders
+# -----------------------------
 def load_json_dataset(filename):
     """
     Load a dataset from JSON.
@@ -52,3 +55,37 @@ def load_dataset(dataset_name):
         return load_json_dataset(path)
     except FileNotFoundError:
         return load_csv_dataset(path)
+
+# -----------------------------
+# Balanced Sampling
+# -----------------------------
+def sample_dataset(df, total_examples=300, human_label=0):
+    """
+    Sample a dataset to have:
+    - half examples with label 'human_label'
+    - the rest equally distributed among other labels
+    """
+    # Separate by class
+    class_dict = {lbl: df[df['label'] == lbl] for lbl in df['label'].unique()}
+
+    # number of human examples
+    num_humans = total_examples // 2
+
+    # number per other class
+    other_labels = [l for l in class_dict if l != human_label]
+    num_per_other = num_humans // len(other_labels) if other_labels else 0
+
+    sampled = []
+
+    # sample human examples
+    if human_label in class_dict:
+        sampled.append(class_dict[human_label].sample(n=num_humans, random_state=42))
+
+    # sample other classes
+    for lbl in other_labels:
+        sampled.append(class_dict[lbl].sample(n=num_per_other, random_state=42))
+
+    # combine and shuffle
+    sampled_df = pd.concat(sampled, ignore_index=True).sample(frac=1, random_state=42)
+
+    return sampled_df

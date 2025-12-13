@@ -2,7 +2,7 @@ import os
 from tqdm import tqdm
 import torch
 
-from src.datasets import load_dataset
+from src.datasets import load_dataset, sample_dataset
 from src.binocular_scorer import PerplexityCalculator
 from src.evaluation import compute_auc, compute_f1, compute_tpr_at_fpr
 from src.utils import set_seed
@@ -39,6 +39,7 @@ def run_experiments():
     for dataset_name in datasets:
         print(f"\n=== Dataset: {dataset_name} ===")
         df = load_dataset(dataset_name)
+        df = sample_dataset(df, total_examples=300, human_label=0)
 
         for det_name, det_obj in detector_objs.items():
             print(f"Running detector: {det_name}")

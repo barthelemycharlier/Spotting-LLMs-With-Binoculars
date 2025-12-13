@@ -60,44 +60,33 @@ class PerplexityCalculator:
             raise ValueError("Input should be a string or a list of strings")
 
     @torch.inference_mode()
-    def perplexity(self, text):
-        """
-        Compute the standard perplexity of text under the performer model.
-        """
-        inputs = self.tokenize(text)
-        input_ids = inputs["input_ids"]
-
-        outputs = self.performer_model(input_ids, labels=input_ids)
-        loss = outputs.loss  # average cross-entropy over tokens (computed by the transformers library)
-        return torch.exp(loss).item()
-
-    @torch.inference_mode()
-    def cross_perplexity(self, text):
-        """
-        Compute the cross-perplexity of text: performer output evaluated by observer model.
-        """
-        inputs = self.tokenize(text)
-        input_ids = inputs["input_ids"]
-
-        outputs = self.observer_model(input_ids, labels=input_ids)
-        loss = outputs.loss
-        return torch.exp(loss).item()
-
-    @torch.inference_mode()
     def binoculars_score(self, texts):
-        """
-        Compute the Binoculars normalized score for a single text or a batch of texts.
-        Returns a list of scores.
-        """
         if isinstance(texts, str):
-            texts = [texts]  # make it a list for uniform processing
+            texts = [texts]
 
-        scores = []
-        for text in texts:
-            ppl = self.perplexity(text)
-            x_ppl = self.cross_perplexity(text)
-            score = torch.log(torch.tensor(ppl)) / torch.log(torch.tensor(x_ppl))
-            scores.append(score.item())  # convert scalar tensor to float
+        # tokenize batch
+        inputs = self.tokenize(texts)
+        input_ids = inputs["input_ids"]
 
-        return scores
+        # --- Performer PPL ---
+        with torch.no_grad():
+            logits = self.performer_model(input_ids).logits
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = input_ids[..., 1:].contiguous()
+            loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+            loss = loss.view(input_ids.size(0), -1).mean(dim=1)
+            ppl = torch.exp(loss)
 
+        # --- Observer cross-PPL ---
+        with torch.no_grad():
+            logits = self.observer_model(input_ids).logits
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = input_ids[..., 1:].contiguous()
+            loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+            loss = loss.view(input_ids.size(0), -1).mean(dim=1)
+            x_ppl = torch.exp(loss)
+
+        scores = torch.log(ppl) / torch.log(x_ppl)
+        return scores.tolist()
