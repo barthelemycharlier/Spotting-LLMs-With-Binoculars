@@ -2,7 +2,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 class PerplexityCalculator:
-    def __init__(self, performer_name, observer_name=None, device=None, dtype=torch.float16):
+    def __init__(self, performer_name, observer_name=None, device=None, dtype=torch.float16, max_length=1024):
         """
         Class for computing perplexity and cross-perplexity.
         performer_name: model used to generate text
@@ -34,10 +34,30 @@ class PerplexityCalculator:
 
         # Tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(performer_name)
+        self.tokenizer.pad_token = self.tokenizer.eos_token
 
-    def tokenize(self, text):
-        """Tokenize text and move to the appropriate device."""
-        return self.tokenizer(text, return_tensors="pt").to(self.device)
+        self.max_length = max_length
+
+
+    def tokenize(self, texts):
+        """
+        Tokenizes a single text or a list of texts into tensors.
+        Ensures all sequences in a batch have the same length with padding.
+        """
+        if isinstance(texts, str):
+            # single text
+            return self.tokenizer(texts, return_tensors="pt").to(self.device)
+        elif isinstance(texts, list):
+            # batch of texts
+            return self.tokenizer(
+                texts,
+                return_tensors="pt",
+                padding=True,       # pad sequences to the same length
+                truncation=True,    # truncate sequences that are too long
+                max_length=self.max_length     # limit max length
+            ).to(self.device)
+        else:
+            raise ValueError("Input should be a string or a list of strings")
 
     @torch.inference_mode()
     def perplexity(self, text):
@@ -64,11 +84,20 @@ class PerplexityCalculator:
         return torch.exp(loss).item()
 
     @torch.inference_mode()
-    def binoculars_score(self, text):
+    def binoculars_score(self, texts):
         """
-        Compute the Binoculars normalized score:
-        Score = log(PPL_performer) / log(X-PPL_performer->observer)
+        Compute the Binoculars normalized score for a single text or a batch of texts.
+        Returns a list of scores.
         """
-        ppl = self.perplexity(text)
-        x_ppl = self.cross_perplexity(text)
-        return torch.log(torch.tensor(ppl)) / torch.log(torch.tensor(x_ppl))
+        if isinstance(texts, str):
+            texts = [texts]  # make it a list for uniform processing
+
+        scores = []
+        for text in texts:
+            ppl = self.perplexity(text)
+            x_ppl = self.cross_perplexity(text)
+            score = torch.log(torch.tensor(ppl)) / torch.log(torch.tensor(x_ppl))
+            scores.append(score.item())  # convert scalar tensor to float
+
+        return scores
+
