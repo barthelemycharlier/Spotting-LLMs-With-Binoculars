@@ -11,7 +11,7 @@ from src.utils import set_seed
 set_seed(42)
 
 # CONFIGURATION
-datasets = ["ghostbuster", "writing_prompts", "news", "student_essay"]
+datasets = ["writing_prompts", "news", "student_essay"]
 detectors = ["binoculars"] # list of detectors to run
 
 performer_model = "tiiuae/falcon-7b"
